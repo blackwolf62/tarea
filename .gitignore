@@ -15,6 +15,13 @@ pnpm-debug.log*
 coverage/
 dist/
 build/
+.scannerwork/
+
+# Credenciales y archivos locales de herramientas
+.sonar-token
+sonar-token.txt
+*.secret
+*.credentials
 
 # Archivos del sistema y del editor
 .DS_Store
