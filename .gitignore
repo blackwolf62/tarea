@@ -1,0 +1,22 @@
+node_modules/
+
+# Logs de npm y herramientas
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Variables de entorno y secretos locales
+.env
+.env.*
+!.env.example
+
+# Cobertura y salidas generadas
+coverage/
+dist/
+build/
+
+# Archivos del sistema y del editor
+.DS_Store
+Thumbs.db
+.vscode/
