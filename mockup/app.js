@@ -62,18 +62,32 @@ function formatCount(value) {
   return new Intl.NumberFormat('es-CL').format(value);
 }
 
+// Saneamiento XSS: todo texto dinámico de la API que se inyecta vía
+// innerHTML debe pasar por aquí. (Los demás puntos usan textContent,
+// asignación de propiedades (.src/.href) o valores numéricos.)
+function escapeHTML(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function productCard(product) {
+  const id = escapeHTML(product.id);
+  const name = escapeHTML(product.name);
   return `
     <article class="product-card">
-      <button class="card-button" type="button" data-product-id="${product.id}" aria-label="Ver detalle de ${product.name}">
+      <button class="card-button" type="button" data-product-id="${id}" aria-label="Ver detalle de ${name}">
         <span class="image-wrap">
           <img src="${product.image}" alt="" />
-          <span class="card-index">#${product.id}</span>
+          <span class="card-index">#${id}</span>
         </span>
         <span class="card-copy">
-          <span class="card-type">${categoryGroup(product.category)}</span>
-          <strong>${product.name}</strong>
-          <span class="card-meta">${product.format} <i>•</i> ${formatPrice(product.price, product.currency)}</span>
+          <span class="card-type">${escapeHTML(categoryGroup(product.category))}</span>
+          <strong>${name}</strong>
+          <span class="card-meta">${escapeHTML(product.format)} <i>•</i> ${formatPrice(product.price, product.currency)}</span>
           <span class="view-link">Ver detalle <span aria-hidden="true">→</span></span>
         </span>
       </button>
@@ -82,8 +96,8 @@ function productCard(product) {
 
 function fillSelect(select, values, placeholder) {
   const current = select.value;
-  select.innerHTML = `<option value="">${placeholder}</option>` +
-    values.map((value) => `<option value="${value.replaceAll('"', '&quot;')}">${value}</option>`).join('');
+  select.innerHTML = `<option value="">${escapeHTML(placeholder)}</option>` +
+    values.map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`).join('');
   if (values.includes(current)) select.value = current;
 }
 
@@ -161,8 +175,8 @@ function renderGrid() {
   renderPagination();
 }
 
-async function fetchJSON(url) {
-  const response = await fetch(url);
+async function fetchJSON(url, { signal } = {}) {
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -170,12 +184,45 @@ async function fetchJSON(url) {
 }
 
 async function loadMeta() {
-  const meta = await fetchJSON('/api/meta');
+  const meta = await fetchJSON('/api/products/filters');
   fillSelect(categoryFilter, meta.categories, 'Todas las categorías');
   fillSelect(formatFilter, meta.formats, 'Todos los formatos');
+  // Valores neutros por defecto: la grilla arranca en página 1 sin filtros.
+  categoryFilter.value = '';
+  formatFilter.value = '';
+  state.category = '';
+  state.format = '';
 }
 
+// Filtros en cascada: los formatos válidos dependen de la categoría.
+// El guardián `formatsRequest` descarta respuestas obsoletas si la
+// categoría cambia de nuevo antes de que llegue el fetch anterior.
+let formatsRequest = 0;
+
+async function refreshFormats(category) {
+  const ticket = ++formatsRequest;
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  const query = params.toString();
+  const meta = await fetchJSON(`/api/products/filters${query ? `?${query}` : ''}`);
+  if (ticket !== formatsRequest) return;
+  fillSelect(formatFilter, meta.formats, 'Todos los formatos');
+  // El estado manda: si el formato actual ya no es válido, vuelta al neutro.
+  if (!meta.formats.includes(state.format)) {
+    state.format = '';
+  }
+  formatFilter.value = state.format;
+}
+
+// Anti-race conditions: cada búsqueda/filtro nuevo aborta el fetch anterior
+// para que una respuesta tardía no sobrescriba el estado vigente.
+let productsController = null;
+
 async function loadProducts() {
+  productsController?.abort();
+  const controller = new AbortController();
+  productsController = controller;
+
   state.loading = true;
   state.error = null;
   renderGrid();
@@ -187,7 +234,9 @@ async function loadProducts() {
   params.set('page', String(state.page));
 
   try {
-    const data = await fetchJSON(`/api/products?${params}`);
+    const data = await fetchJSON(`/api/products?${params}`, { signal: controller.signal });
+    // Si el usuario ya disparó otra búsqueda, esta respuesta es obsoleta.
+    if (productsController !== controller) return;
     state.items = data.items;
     state.total = data.total;
     state.page = data.page;
@@ -195,6 +244,9 @@ async function loadProducts() {
     state.loading = false;
     renderGrid();
   } catch (error) {
+    // Abortado por una interacción más reciente: no es un error visible.
+    if (controller.signal.aborted || error?.name === 'AbortError') return;
+    if (productsController !== controller) return;
     state.error = error;
     state.items = [];
     state.total = 0;
@@ -219,7 +271,7 @@ function openDetail(product) {
     ['Identificador', product.id],
   ];
   document.querySelector('#detail-list').innerHTML = values
-    .map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`)
+    .map(([label, value]) => `<div><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd></div>`)
     .join('');
 
   document.querySelector('#detail-price').textContent = formatPrice(product.price, product.currency);
@@ -238,11 +290,30 @@ function applyFiltersFromControls({ resetPage = true } = {}) {
   loadProducts();
 }
 
+async function onCategoryChange() {
+  state.category = categoryFilter.value;
+  // La cascada invalida el formato anterior: reset al neutro para no
+  // caer en combinaciones imposibles (0 resultados inmediatos).
+  state.format = '';
+  formatFilter.value = '';
+  state.page = 1;
+  loadProducts();
+  try {
+    await refreshFormats(state.category);
+  } catch {
+    // Si falla el refresco de formatos se conserva la lista anterior;
+    // los productos ya reflejan el estado correspondiente.
+  }
+}
+
 function clearFilters() {
   search.value = '';
   categoryFilter.value = '';
   formatFilter.value = '';
+  state.format = '';
   applyFiltersFromControls();
+  // Restaura el listado general de formatos (categoría vacía).
+  refreshFormats('').catch(() => {});
 }
 
 grid.addEventListener('click', async (event) => {
@@ -275,9 +346,9 @@ grid.addEventListener('click', async (event) => {
 document.querySelector('#dialog-close').addEventListener('click', () => dialog.close());
 dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
 
-[search, categoryFilter, formatFilter].forEach((control) => {
-  control.addEventListener('input', () => applyFiltersFromControls());
-});
+search.addEventListener('input', () => applyFiltersFromControls());
+formatFilter.addEventListener('input', () => applyFiltersFromControls());
+categoryFilter.addEventListener('input', () => { onCategoryChange(); });
 
 pagePrev.addEventListener('click', () => {
   if (state.page <= 1) return;
