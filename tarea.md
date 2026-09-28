@@ -78,3 +78,14 @@ Arrancar el servidor, abrir la vitrina en el navegador y comprobar:
 - Vacío (búsqueda inexistente) y error (API caída o CSV ausente) + reintento.
 
 Sustituto si el navegador de Cursor no estuviera disponible: `curl` a `/api/meta` y `/api/products`.
+
+## Equipo
+
+* Eynier Córdova
+* Hans Schiess
+* Raúl Salas
+* Francisco Ocharan
+* Victoria Muñoz
+* Benjamín Carmona
+* Miguel Mora
+* Isabel de la Cuadra
