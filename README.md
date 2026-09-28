@@ -6,14 +6,14 @@ El proyecto permite explorar un catálogo de **4.032 productos de supermercado**
 
 ## Equipo
 
-* Eynier Córdova
-* Hans Schiess
-* Raúl Salas
-* Francisco Ocharan
-* Victoria Muñoz
-* Benjamín Carmona
+* Eynier Córdova https://github.com/blackwolf62
+* Hans Schiess https://github.com/schiesscl
+* Raúl Salas https://github.com/DevRSH
+* Francisco Ocharan https://github.com/Looyo-coder
+* Victoria Muñoz https://github.com/victoriamunozrobles-bot
+* Benjamín Carmona https://github.com/Benj11ii,
 * Miguel Mora
-* Isabel de la Cuadra
+* Isabel de la Cuadra https://github.com/Isabel-de-la-Cuadra
 
 ## Funcionalidades
 
@@ -167,6 +167,4 @@ No forman parte de esta etapa:
 * Pagos.
 * Administración de productos.
 
-## 
-Agregar aquí cualquier información adicional que el equipo considere relevante para la revisión del proyecto.
 
